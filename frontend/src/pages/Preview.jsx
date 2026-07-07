@@ -6,12 +6,17 @@ import {
   Button,
   TextField,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow
 } from '@mui/material';
 import {
   Save as SaveIcon,
   Download as DownloadIcon,
-  CalendarToday as DateIcon,
   TableChart as SheetIcon
 } from '@mui/icons-material';
 import api from '../api';
@@ -66,7 +71,7 @@ export default function Preview() {
       let newTotalAmount = 0;
       newGroups[groupIndex].rows.forEach(r => {
         newTotalQty += parseFloat(r.qty) || 0;
-        newTotalAmount += parseFloat(r.amount) || 0;
+        newTotalAmount += Math.round(parseFloat(r.amount) || 0);
       });
       newGroups[groupIndex].totalQty = newTotalQty;
       newGroups[groupIndex].totalAmount = newTotalAmount;
@@ -133,6 +138,53 @@ export default function Preview() {
     }
     return dateStr;
   };
+
+  // Calculate Verification Summary Statistics
+  const summaryStats = React.useMemo(() => {
+    if (!dataGroups.length) return null;
+
+    const ownersSet = new Set();
+    const trucksSet = new Set();
+    let totalChallans = 0;
+    let grandQty = 0;
+    let grandAmount = 0;
+
+    const ownerSummaryMap = new Map();
+
+    dataGroups.forEach(group => {
+      const owner = group.ownerName || 'Unknown Owner';
+      ownersSet.add(owner);
+      trucksSet.add(group.truckNumber);
+      totalChallans += group.rows.length;
+      grandQty += group.totalQty;
+      grandAmount += group.totalAmount;
+
+      if (!ownerSummaryMap.has(owner)) {
+        ownerSummaryMap.set(owner, {
+          ownerName: owner,
+          trucks: new Set(),
+          qtyTotal: 0,
+          amountTotal: 0
+        });
+      }
+      const os = ownerSummaryMap.get(owner);
+      os.trucks.add(group.truckNumber);
+      os.qtyTotal += group.totalQty;
+      os.amountTotal += group.totalAmount;
+    });
+
+    return {
+      ownersCount: ownersSet.size,
+      trucksCount: trucksSet.size,
+      totalChallans,
+      grandQty,
+      grandAmount,
+      ownerSummaries: Array.from(ownerSummaryMap.values()).map(os => ({
+        ...os,
+        truckCount: os.trucks.size
+      }))
+    };
+  }, [dataGroups]);
 
   return (
     <Box>
@@ -201,6 +253,73 @@ export default function Preview() {
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
           <CircularProgress />
         </Box>
+      )}
+
+      {/* Verification Summary Panel */}
+      {!loading && summaryStats && (
+        <Paper sx={{ p: 3, mb: 4, border: '1px dashed #2b5876', bgcolor: '#fbfcfd' }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, mb: 2, color: 'primary.main', borderBottom: '1px solid #e2e8f0', pb: 1 }}>
+            PAYMENT SUMMARY
+          </Typography>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 4, mb: 3 }}>
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">Payment Period</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{formatDateLabel(fromDate)} to {formatDateLabel(toDate)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">Total Owners</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{summaryStats.ownersCount}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">Total Trucks</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{summaryStats.trucksCount}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">Total Challans</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{summaryStats.totalChallans}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">Overall Quantity</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{summaryStats.grandQty.toFixed(2)}</Typography>
+            </Box>
+            <Box>
+              <Typography variant="caption" color="text.secondary" display="block">Overall Amount</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>{summaryStats.grandAmount.toLocaleString('en-IN')}</Typography>
+            </Box>
+          </Box>
+
+          <Typography variant="subtitle2" sx={{ fontWeight: 700, mb: 1, mt: 2 }}>
+            Owner Summary
+          </Typography>
+          <TableContainer component={Paper} variant="outlined">
+            <Table size="small">
+              <TableHead sx={{ bgcolor: '#f8fafc' }}>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700 }}>Owner Name</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Truck Count</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Qty Total</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 700 }}>Amount Total</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {summaryStats.ownerSummaries.map((os) => (
+                  <TableRow key={os.ownerName} hover>
+                    <TableCell sx={{ fontWeight: 500 }}>{os.ownerName}</TableCell>
+                    <TableCell align="right">{os.truckCount}</TableCell>
+                    <TableCell align="right">{os.qtyTotal.toFixed(2)}</TableCell>
+                    <TableCell align="right">{os.amountTotal.toLocaleString('en-IN')}</TableCell>
+                  </TableRow>
+                ))}
+                <TableRow sx={{ bgcolor: '#f8fafc', fontWeight: 'bold' }}>
+                  <TableCell sx={{ fontWeight: 'bold' }}>Grand Total</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{summaryStats.trucksCount}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{summaryStats.grandQty.toFixed(2)}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 'bold' }}>{summaryStats.grandAmount.toLocaleString('en-IN')}</TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </Paper>
       )}
 
       {/* Excel Sheet HTML Render */}
@@ -314,7 +433,7 @@ export default function Preview() {
                         {group.totalQty.toFixed(2)}
                       </td>
                       <td style={{ ...totalCellStyle, textAlign: 'right' }}>
-                        {group.totalAmount.toFixed(2)}
+                        {group.totalAmount}
                       </td>
                     </tr>
                   </tbody>

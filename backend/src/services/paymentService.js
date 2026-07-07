@@ -6,10 +6,6 @@ const path = require('path');
 class PaymentService {
   // ─────────────────────────────────────────────────────────────
   // Shared grouping logic
-  //   Returns an array of truck-groups, each annotated with
-  //   ownerChangeAfter = true when the NEXT group belongs to a
-  //   different owner. This drives blank-row insertion in both
-  //   the preview and the Excel generator.
   // ─────────────────────────────────────────────────────────────
   async buildGroups(fromDate, toDate) {
     const start = new Date(fromDate);
@@ -38,9 +34,8 @@ class PaymentService {
       return (a.challanNo || '').toLowerCase().localeCompare((b.challanNo || '').toLowerCase());
     });
 
-    // Group by Truck — preserve order from sorted array
     const groups = [];
-    const seen = new Map(); // truckNumber → group index
+    const seen = new Map();
 
     rows.forEach(row => {
       const tNum = row.truckNumber.toUpperCase().trim();
@@ -48,21 +43,20 @@ class PaymentService {
         seen.set(tNum, groups.length);
         groups.push({
           truckNumber: tNum,
-          // Internal owner id — never exposed to the UI/Excel printout
           _ownerId: row.matchedOwner ? String(row.matchedOwner._id) : '__unknown__',
+          ownerName: row.matchedOwner ? row.matchedOwner.name : 'Unknown Owner',
           rows: [],
           totalQty: 0,
           totalAmount: 0,
-          ownerChangeAfter: false  // filled in below
+          ownerChangeAfter: false
         });
       }
       const grp = groups[seen.get(tNum)];
       grp.rows.push(row);
       grp.totalQty += row.qty || 0;
-      grp.totalAmount += row.amount || 0;
+      grp.totalAmount += Math.round(row.amount || 0);
     });
 
-    // Mark each group whose owner differs from the next group
     for (let i = 0; i < groups.length - 1; i++) {
       if (groups[i]._ownerId !== groups[i + 1]._ownerId) {
         groups[i].ownerChangeAfter = true;
@@ -73,22 +67,25 @@ class PaymentService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Preview endpoint — strips internal _ownerId before sending
+  // Preview endpoint
   // ─────────────────────────────────────────────────────────────
   async getPreview({ fromDate, toDate }) {
     const groups = await this.buildGroups(fromDate, toDate);
-    // Return ownerChangeAfter to the frontend; strip raw _ownerId
     return groups.map(g => ({
       truckNumber: g.truckNumber,
-      rows: g.rows,
+      ownerName: g.ownerName,
+      rows: g.rows.map(r => ({
+        ...r.toObject ? r.toObject() : r,
+        amount: Math.round(r.amount || 0)
+      })),
       totalQty: g.totalQty,
-      totalAmount: g.totalAmount,
+      totalAmount: Math.round(g.totalAmount),
       ownerChangeAfter: g.ownerChangeAfter
     }));
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Update edited rows (unchanged)
+  // Update edited rows
   // ─────────────────────────────────────────────────────────────
   async updateRows(rows) {
     const updatedRows = [];
@@ -108,13 +105,15 @@ class PaymentService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Helpers for Excel generation
+  // Complete style cloning
   // ─────────────────────────────────────────────────────────────
   copyCellStyles(srcCell, destCell) {
-    if (srcCell.font)      destCell.font      = JSON.parse(JSON.stringify(srcCell.font));
-    if (srcCell.fill)      destCell.fill      = JSON.parse(JSON.stringify(srcCell.fill));
-    if (srcCell.border)    destCell.border    = JSON.parse(JSON.stringify(srcCell.border));
+    // Clone styles completely
+    if (srcCell.font) destCell.font = JSON.parse(JSON.stringify(srcCell.font));
+    if (srcCell.fill) destCell.fill = JSON.parse(JSON.stringify(srcCell.fill));
+    if (srcCell.border) destCell.border = JSON.parse(JSON.stringify(srcCell.border));
     if (srcCell.alignment) destCell.alignment = JSON.parse(JSON.stringify(srcCell.alignment));
+    if (srcCell.protection) destCell.protection = JSON.parse(JSON.stringify(srcCell.protection));
     if (srcCell.numFormat) destCell.numFormat = srcCell.numFormat;
   }
 
@@ -128,7 +127,7 @@ class PaymentService {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Excel generation — owner-aware blank rows
+  // Excel generation
   // ─────────────────────────────────────────────────────────────
   async generateExcel({ fromDate, toDate }) {
     const templatePath = path.join(__dirname, '..', 'template', 'Payment_Template.xlsx');
@@ -137,8 +136,7 @@ class PaymentService {
     await workbook.xlsx.readFile(templatePath);
     const srcSheet = workbook.worksheets[0];
 
-    // ── Capture template rows before splicing ──────────────────
-    // Header row = Row 3 in template
+    // Read templates elements from rows 3, 4, 5
     const headerRowTemp = srcSheet.getRow(3);
     const headerHeight  = headerRowTemp.height;
     const headerStyles  = [];
@@ -148,43 +146,46 @@ class PaymentService {
       headerValues.push(headerRowTemp.getCell(c).value);
     }
 
-    // Data row = Row 4
     const dataRowTemp = srcSheet.getRow(4);
     const dataHeight  = dataRowTemp.height;
     const dataStyles  = [];
     for (let c = 1; c <= 7; c++) dataStyles.push(dataRowTemp.getCell(c));
 
-    // Total row = Row 5
     const totalRowTemp = srcSheet.getRow(5);
     const totalHeight  = totalRowTemp.height;
     const totalStyles  = [];
     for (let c = 1; c <= 7; c++) totalStyles.push(totalRowTemp.getCell(c));
 
-    // Blank separator row = Row 6 (if present) — use for owner-change gaps
-    // We just write empty rows with the same height as data rows.
     const blankHeight = dataHeight || 18;
 
-    // ── Update title ───────────────────────────────────────────
     const fromDateStr = this.formatDate(new Date(fromDate));
     const toDateStr   = this.formatDate(new Date(toDate));
     srcSheet.getCell('A1').value =
       `PAYMENT SHEET FOR THE PERIOD FROM ${fromDateStr} TO ${toDateStr}`;
 
-    // ── Fetch grouped data ─────────────────────────────────────
     const groups = await this.buildGroups(fromDate, toDate);
 
-    // Remove the 3 template placeholder rows (rows 3–5)
+    // Remove template rows 3 to 5
     srcSheet.spliceRows(3, 3);
 
     let currentExcelRow = 3;
+    let pageStartRow = 3; 
+    const rowsPerPage = 58; // Max printable rows per A4 Portrait page
 
-    const writeRow = (height, cells) => {
+    const writeRow = (height, cells, tempRow) => {
       const exRow = srcSheet.getRow(currentExcelRow);
       exRow.height = height;
+      
+      // Clone row metadata from template if provided
+      if (tempRow) {
+        exRow.hidden = tempRow.hidden;
+        exRow.outlineLevel = tempRow.outlineLevel;
+      }
+
       cells.forEach(({ col, value, style, numFormat }) => {
         const cell = exRow.getCell(col);
         if (value !== undefined) cell.value = value;
-        if (style)     this.copyCellStyles(style, cell);
+        if (style) this.copyCellStyles(style, cell);
         if (numFormat) cell.numFmt = numFormat;
       });
       exRow.commit();
@@ -199,27 +200,47 @@ class PaymentService {
     };
 
     groups.forEach((group, idx) => {
-      // 1. Header row
+      // Required rows for this truck block: 
+      // 1 (header) + N (data rows) + 1 (total)
+      const blockRowsCount = group.rows.length + 2;
+
+      // Spacing rows count after this block
+      let extraSpacingCount = 0;
+      if (group.ownerChangeAfter) {
+        extraSpacingCount = 2; // ownership separator
+      }
+
+      const totalRequiredRows = blockRowsCount + extraSpacingCount;
+      const currentUsedRows = currentExcelRow - pageStartRow;
+
+      // If it doesn't fit on the current page, insert a page break BEFORE writing header.
+      if (currentUsedRows > 0 && (currentUsedRows + totalRequiredRows > rowsPerPage)) {
+        const prevRow = srcSheet.getRow(currentExcelRow - 1);
+        prevRow.addPageBreak(); // Insert page break at the last written row
+        pageStartRow = currentExcelRow;
+      }
+
+      // Write Header
       writeRow(headerHeight, Array.from({ length: 7 }, (_, i) => ({
         col: i + 1,
         value: headerValues[i],
         style: headerStyles[i]
-      })));
+      })), headerRowTemp);
 
-      // 2. Data rows
+      // Write Data Rows
       group.rows.forEach(item => {
         writeRow(dataHeight, [
-          { col: 1, value: this.formatDate(item.date),  style: dataStyles[0] },
-          { col: 2, value: item.challanNo,              style: dataStyles[1] },
-          { col: 3, value: item.partyName,              style: dataStyles[2] },
-          { col: 4, value: item.destination,            style: dataStyles[3] },
-          { col: 5, value: item.truckNumber,            style: dataStyles[4] },
+          { col: 1, value: this.formatDate(item.date),   style: dataStyles[0] },
+          { col: 2, value: item.challanNo,               style: dataStyles[1] },
+          { col: 3, value: item.partyName,               style: dataStyles[2] },
+          { col: 4, value: item.destination,             style: dataStyles[3] },
+          { col: 5, value: item.truckNumber,             style: dataStyles[4] },
           { col: 6, value: item.qty,    style: dataStyles[5], numFormat: '#,##0.00' },
-          { col: 7, value: item.amount, style: dataStyles[6], numFormat: '#,##0.00' }
-        ]);
+          { col: 7, value: Math.round(item.amount || 0), style: dataStyles[6], numFormat: '#,##0' }
+        ], dataRowTemp);
       });
 
-      // 3. Total row
+      // Write Total Row
       writeRow(totalHeight, [
         { col: 1, value: null,             style: totalStyles[0] },
         { col: 2, value: null,             style: totalStyles[1] },
@@ -227,11 +248,10 @@ class PaymentService {
         { col: 4, value: null,             style: totalStyles[3] },
         { col: 5, value: 'Total:',         style: totalStyles[4] },
         { col: 6, value: group.totalQty,   style: totalStyles[5], numFormat: '#,##0.00' },
-        { col: 7, value: group.totalAmount, style: totalStyles[6], numFormat: '#,##0.00' }
-      ]);
+        { col: 7, value: Math.round(group.totalAmount), style: totalStyles[6], numFormat: '#,##0' }
+      ], totalRowTemp);
 
-      // 4. Spacing: 2 blank rows after owner change, 0 between same-owner trucks
-      //    (Last group never needs trailing blanks)
+      // Apply spacing
       if (group.ownerChangeAfter) {
         writeBlankRow();
         writeBlankRow();
