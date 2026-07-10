@@ -14,7 +14,8 @@ import {
   TableChart as DataIcon,
   History as HistoryIcon,
   Business as BusinessIcon,
-  Assessment as PaymentSheetIcon
+  Assessment as PaymentSheetIcon,
+  LocalGasStation as LocalGasStationIcon
 } from '@mui/icons-material';
 
 const drawerWidth = 260;
@@ -30,11 +31,18 @@ export default function Layout({ children }) {
     { text: 'Dashboard', icon: <DashboardIcon />, path: '/' },
     { text: 'Owners Master', icon: <PeopleIcon />, path: '/owners' },
     { text: 'Trucks Master', icon: <ShippingIcon />, path: '/trucks' },
+    { text: 'Pumps Master', icon: <LocalGasStationIcon />, path: '/pumps' },
     { divider: true, label: 'Payment Sheet' },
     { text: 'Upload Payment Sheet', icon: <UploadIcon />, path: '/upload' },
     { text: 'Generate Payment Sheet', icon: <PaymentSheetIcon />, path: '/preview' },
     { text: 'Uploaded Data', icon: <DataIcon />, path: '/uploaded-data' },
-    { text: 'Upload History', icon: <HistoryIcon />, path: '/history' }
+    { text: 'Upload History', icon: <HistoryIcon />, path: '/history' },
+    { divider: true, label: 'Diesel Sheet' },
+    { text: 'Upload Diesel Sheet', icon: <UploadIcon />, path: '/diesel-upload' },
+    { text: 'Generate Diesel Sheet', icon: <PaymentSheetIcon />, path: '/diesel-report' },
+    { text: 'Diesel Data Log', icon: <DataIcon />, path: '/diesel-data' },
+    { divider: true, label: 'Tax & Cheque Summaries' },
+    { text: 'GST / RCM / Cheque Summary', icon: <PaymentSheetIcon />, path: '/summary-preview' }
   ];
 
   const isActive = (path) => {

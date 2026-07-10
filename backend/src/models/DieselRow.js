@@ -1,30 +1,30 @@
 const mongoose = require('mongoose');
 
-const uploadedRowSchema = new mongoose.Schema({
+const dieselRowSchema = new mongoose.Schema({
+  pump: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Pump',
+    required: true
+  },
   date: {
     type: Date,
     required: true
   },
-  challanNo: {
+  slNo: {
     type: String,
-    trim: true,
-    default: ''
+    default: '',
+    trim: true
   },
-  partyName: {
-    type: String,
-    trim: true,
-    default: ''
-  },
-  destination: {
-    type: String,
-    trim: true,
-    default: ''
-  },
-  truckNumber: {
+  vehicleNo: {
     type: String,
     uppercase: true,
     trim: true,
-    default: ''
+    required: true
+  },
+  product: {
+    type: String,
+    default: '',
+    trim: true
   },
   qty: {
     type: Number,
@@ -34,19 +34,7 @@ const uploadedRowSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  gross: {
-    type: Number,
-    default: 0
-  },
-  comm: {
-    type: Number,
-    default: 0
-  },
   amount: {
-    type: Number,
-    default: 0
-  },
-  shortage: {
     type: Number,
     default: 0
   },
@@ -79,4 +67,4 @@ const uploadedRowSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('UploadedRow', uploadedRowSchema);
+module.exports = mongoose.model('DieselRow', dieselRowSchema);

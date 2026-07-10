@@ -4,6 +4,10 @@ const ownerRoutes = require('./routes/ownerRoutes');
 const truckRoutes = require('./routes/truckRoutes');
 const uploadRoutes = require('./routes/uploadRoutes');
 const paymentRoutes = require('./routes/paymentRoutes');
+const pumpRoutes = require('./routes/pumpRoutes');
+const dieselRoutes = require('./routes/dieselRoutes');
+const dieselReportRoutes = require('./routes/dieselReportRoutes');
+const summaryRoutes = require('./routes/summaryRoutes');
 
 const app = express();
 
@@ -17,6 +21,10 @@ app.use('/api/owners', ownerRoutes);
 app.use('/api/trucks', truckRoutes);
 app.use('/api/upload', uploadRoutes);
 app.use('/api/payment', paymentRoutes);
+app.use('/api/pumps', pumpRoutes);
+app.use('/api/diesel', dieselRoutes);
+app.use('/api/diesel-report', dieselReportRoutes);
+app.use('/api/summary', summaryRoutes);
 
 // Error Handling Middleware
 app.use((err, req, res, next) => {
