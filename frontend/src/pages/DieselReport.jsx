@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import {
-  Box, Paper, Typography, Button, TextField, Alert, CircularProgress
+  Box, Paper, Typography, Button, TextField, Alert, CircularProgress, Grid
 } from '@mui/material';
 import { Download as DownloadIcon, TableChart as SheetIcon } from '@mui/icons-material';
 import api from '../api';
@@ -125,8 +125,39 @@ export default function DieselReport() {
       )}
 
       {!loading && dataGroups.length > 0 && (
-        <Paper sx={{ p: 4, overflowX: 'auto', bgcolor: '#ffffff', border: '1px solid #d1d5db' }}>
-          <Typography
+        <Box>
+          {/* Overall Totals Banner for generated diesel report */}
+          <Paper sx={{ p: 2, mb: 3, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 2 }}>
+            <Grid container spacing={2}>
+              <Grid item xs={12} sm={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                  Overall Total Rows
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+                  {dataGroups.reduce((sum, g) => sum + (g.rows?.length || 0), 0)}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                  Overall Total Quantity
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+                  {dataGroups.reduce((sum, g) => sum + (g.totalQty || 0), 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </Typography>
+              </Grid>
+              <Grid item xs={12} sm={4}>
+                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+                  Overall Total Amount
+                </Typography>
+                <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+                  ₹ {Math.round(dataGroups.reduce((sum, g) => sum + (g.totalAmount || 0), 0)).toLocaleString('en-IN')}
+                </Typography>
+              </Grid>
+            </Grid>
+          </Paper>
+
+          <Paper sx={{ p: 4, overflowX: 'auto', bgcolor: '#ffffff', border: '1px solid #d1d5db' }}>
+            <Typography
             variant="h6"
             align="center"
             sx={{
@@ -197,7 +228,8 @@ export default function DieselReport() {
             ))}
           </Box>
         </Paper>
-      )}
+      </Box>
+    )}
 
       {!loading && dataGroups.length === 0 && (
         <Paper sx={{ p: 4, textAlign: 'center' }}>

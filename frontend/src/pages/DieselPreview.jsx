@@ -4,7 +4,7 @@ import {
   Box, Typography, Button, Alert, Chip, Paper,
   TextField, InputAdornment, Tooltip, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  Snackbar
+  Snackbar, Grid
 } from '@mui/material';
 import {
   Warning as WarningIcon,
@@ -387,6 +387,36 @@ export default function DieselPreview() {
           clickable
         />
       </Box>
+
+      {/* Overall Totals Banner */}
+      <Paper sx={{ p: 2, mb: 3, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 2 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={4}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Rows
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              {rows.length}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Quantity
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              {numFmt(rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0))}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} sm={4}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Amount
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              ₹ {Math.round(rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)).toLocaleString('en-IN')}
+            </Typography>
+          </Grid>
+        </Grid>
+      </Paper>
 
       {hasCriticalErrors && (
         <Alert severity="error" sx={{ mb: 2 }}>
