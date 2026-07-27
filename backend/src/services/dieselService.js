@@ -2,6 +2,7 @@ const ExcelJS = require('exceljs');
 const Truck = require('../models/Truck');
 const UploadRun = require('../models/UploadRun');
 const DieselRow = require('../models/DieselRow');
+const UploadedRow = require('../models/UploadedRow');
 
 class DieselService {
   parseExcelDate(val) {
@@ -301,6 +302,7 @@ class DieselService {
 
   async deleteRun(runId) {
     await DieselRow.deleteMany({ uploadRun: runId });
+    await UploadedRow.deleteMany({ uploadRun: runId });
     await UploadRun.findByIdAndDelete(runId);
   }
 

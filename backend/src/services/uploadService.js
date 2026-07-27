@@ -2,6 +2,7 @@ const ExcelJS = require('exceljs');
 const Truck = require('../models/Truck');
 const UploadRun = require('../models/UploadRun');
 const UploadedRow = require('../models/UploadedRow');
+const DieselRow = require('../models/DieselRow');
 
 class UploadService {
   // Helper to parse date
@@ -344,6 +345,7 @@ class UploadService {
 
   async deleteRun(runId) {
     await UploadedRow.deleteMany({ uploadRun: runId });
+    await DieselRow.deleteMany({ uploadRun: runId });
     await UploadRun.findByIdAndDelete(runId);
   }
 

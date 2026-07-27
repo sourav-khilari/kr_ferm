@@ -1,10 +1,10 @@
 import React, { useState, useMemo } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
-  Box, Typography, Button, Alert, Stack, Chip, Paper,
+  Box, Typography, Button, Alert, Chip, Paper,
   TextField, InputAdornment, Tooltip, IconButton,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  Snackbar
+  Snackbar, Grid
 } from '@mui/material';
 import {
   Warning as WarningIcon,
@@ -13,7 +13,10 @@ import {
   Save as SaveIcon,
   ArrowBack as BackIcon,
   Search as SearchIcon,
-  FilterList as FilterIcon
+  FilterList as FilterIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Close as CloseIcon
 } from '@mui/icons-material';
 import { DataGrid } from '@mui/x-data-grid';
 import api from '../api';
@@ -30,10 +33,55 @@ function numFmt(val) {
   return Number(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+const FIELD_DEFS = [
+  { key: 'date',        label: 'Date',         type: 'date' },
+  { key: 'challanNo',   label: 'Challan No.' },
+  { key: 'partyName',   label: "Party's Name" },
+  { key: 'destination', label: 'Destination' },
+  { key: 'truckNumber', label: 'Vehicle No.' },
+  { key: 'qty',         label: 'Qty',          type: 'number' },
+  { key: 'rate',        label: 'Rate',         type: 'number' },
+  { key: 'gross',       label: 'Gross',        type: 'number' },
+  { key: 'comm',        label: 'Commission',   type: 'number' },
+  { key: 'amount',      label: 'Amount',       type: 'number' }
+];
+
+function validateRow(form) {
+  const errs = [];
+  const warns = [];
+  const qty    = parseFloat(form.qty);
+  const rate   = parseFloat(form.rate);
+  const gross  = parseFloat(form.gross);
+  const comm   = parseFloat(form.comm);
+  const amount = parseFloat(form.amount);
+
+  if (!form.truckNumber) errs.push('Missing Truck Number');
+  if (!form.partyName)   warns.push('Missing Party Name');
+  if (!form.destination) warns.push('Missing Destination');
+
+  if (!isNaN(qty) && !isNaN(rate) && !isNaN(gross)) {
+    const calcGross = qty * rate;
+    if (Math.abs(gross - calcGross) > 0.05) {
+      errs.push(`Gross mismatch: expected ${calcGross.toFixed(2)}, got ${gross.toFixed(2)}`);
+    }
+  }
+  if (!isNaN(gross) && !isNaN(comm) && !isNaN(amount)) {
+    const calcAmount = gross - comm;
+    if (Math.abs(amount - calcAmount) > 0.05) {
+      errs.push(`Amount mismatch: expected ${calcAmount.toFixed(2)}, got ${amount.toFixed(2)}`);
+    }
+  }
+
+  return { errs, warns };
+}
+
 export default function UploadPreview() {
   const location = useLocation();
   const navigate = useNavigate();
   const { report, fileName } = location.state || {};
+
+  // Working copy of parsed rows (supports edits + deletes before save)
+  const [rows, setRows] = useState(() => (report?.parsedData || []).map((r, i) => ({ ...r, id: i })));
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -41,6 +89,15 @@ export default function UploadPreview() {
   const [saveError, setSaveError] = useState('');
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [snack, setSnack] = useState({ open: false, msg: '', severity: 'success' });
+
+  // Edit dialog state
+  const [editRow, setEditRow]           = useState(null);
+  const [editForm, setEditForm]         = useState({});
+  const [editErrors, setEditErrors]     = useState([]);
+  const [editWarnings, setEditWarnings] = useState([]);
+
+  // Delete dialog state
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   if (!report) {
     return (
@@ -53,36 +110,115 @@ export default function UploadPreview() {
     );
   }
 
-  const parsedData = report.parsedData || [];
-  const hasCriticalErrors = parsedData.some(r => r.hasError);
+  // Computed counts from live rows
+  const errorCount   = rows.filter(r => r.hasError).length;
+  const warningCount = rows.filter(r => r.hasWarning && !r.hasError).length;
+  const validCount   = rows.filter(r => !r.hasError && !r.hasWarning).length;
+  const hasCriticalErrors = errorCount > 0;
 
-  // Filter rows
   const filteredRows = useMemo(() => {
-    let rows = parsedData.map((r, idx) => ({ ...r, id: idx }));
+    let r = rows;
     if (search) {
       const q = search.toLowerCase();
-      rows = rows.filter(r =>
-        (r.challanNo || '').toLowerCase().includes(q) ||
-        (r.partyName || '').toLowerCase().includes(q) ||
-        (r.truckNumber || '').toLowerCase().includes(q) ||
-        (r.destination || '').toLowerCase().includes(q)
+      r = r.filter(row =>
+        (row.challanNo   || '').toLowerCase().includes(q) ||
+        (row.partyName   || '').toLowerCase().includes(q) ||
+        (row.truckNumber || '').toLowerCase().includes(q) ||
+        (row.destination || '').toLowerCase().includes(q)
       );
     }
     if (filterStatus !== 'all') {
-      if (filterStatus === 'error') rows = rows.filter(r => r.hasError);
-      if (filterStatus === 'warning') rows = rows.filter(r => r.hasWarning && !r.hasError);
-      if (filterStatus === 'valid') rows = rows.filter(r => !r.hasError && !r.hasWarning);
+      if (filterStatus === 'error')   r = r.filter(row => row.hasError);
+      if (filterStatus === 'warning') r = r.filter(row => row.hasWarning && !row.hasError);
+      if (filterStatus === 'valid')   r = r.filter(row => !row.hasError && !row.hasWarning);
     }
-    return rows;
-  }, [parsedData, search, filterStatus]);
+    return r;
+  }, [rows, search, filterStatus]);
 
   const getRowStatus = (row) => {
-    if (row.hasError) return 'error';
+    if (row.hasError)   return 'error';
     if (row.hasWarning) return 'warning';
     return 'valid';
   };
 
-  // Cell renderer — highlights cells that have a matching warning/error keyword
+  // ── Edit handlers ────────────────────────────────────────────────────────────
+  const openEdit = (row) => {
+    setEditRow(row);
+    setEditForm({
+      date:        row.date ? new Date(row.date).toISOString().split('T')[0] : '',
+      challanNo:   row.challanNo   || '',
+      partyName:   row.partyName   || '',
+      destination: row.destination || '',
+      truckNumber: row.truckNumber || '',
+      qty:         row.qty         ?? '',
+      rate:        row.rate        ?? '',
+      gross:       row.gross       ?? '',
+      comm:        row.comm        ?? '',
+      amount:      row.amount      ?? ''
+    });
+    const { errs, warns } = validateRow(row);
+    setEditErrors(errs);
+    setEditWarnings(warns);
+  };
+
+  const handleEditFieldChange = (field, value) => {
+    const updated = { ...editForm, [field]: value };
+    setEditForm(updated);
+    const { errs, warns } = validateRow(updated);
+    setEditErrors(errs);
+    setEditWarnings(warns);
+  };
+
+  const handleSaveEdit = () => {
+    const { errs, warns } = validateRow(editForm);
+    const updatedRow = {
+      ...editRow,
+      ...editForm,
+      date:        editForm.date ? new Date(editForm.date) : editRow.date,
+      qty:         parseFloat(editForm.qty),
+      rate:        parseFloat(editForm.rate),
+      gross:       parseFloat(editForm.gross),
+      comm:        parseFloat(editForm.comm),
+      amount:      parseFloat(editForm.amount),
+      rowErrors:   errs,
+      rowWarnings: warns,
+      hasError:    errs.length > 0,
+      hasWarning:  warns.length > 0
+    };
+    setRows(prev => prev.map(r => r.id === editRow.id ? updatedRow : r));
+    setEditRow(null);
+    setSnack({ open: true, msg: 'Row updated. Remember to save to database.', severity: 'info' });
+  };
+
+  // ── Delete handlers ──────────────────────────────────────────────────────────
+  const handleDelete = () => {
+    setRows(prev => prev.filter(r => r.id !== deleteTarget.id));
+    setDeleteTarget(null);
+    setSnack({ open: true, msg: 'Row removed from preview.', severity: 'info' });
+  };
+
+  // ── Save to DB ───────────────────────────────────────────────────────────────
+  const handleSave = async () => {
+    setSaving(true);
+    setSaveError('');
+    try {
+      const res = await api.post('/upload/save', {
+        fileName: fileName || 'UploadedSheet.xlsx',
+        rows: rows.map(({ id, ...r }) => r)
+      });
+      if (res.data.success) {
+        setSnack({ open: true, msg: 'Data saved successfully!', severity: 'success' });
+        setTimeout(() => navigate('/uploaded-data'), 1500);
+      }
+    } catch (err) {
+      setSaveError(err.response?.data?.message || 'Failed to save data.');
+    } finally {
+      setSaving(false);
+      setConfirmOpen(false);
+    }
+  };
+
+  // Cell renderer
   const makeCellRenderer = (fieldKey) => (params) => {
     const row = params.row;
     const allIssues = [...(row.rowErrors || []), ...(row.rowWarnings || [])];
@@ -125,9 +261,9 @@ export default function UploadPreview() {
 
   const columns = [
     {
-      field: 'rowNum', headerName: '#', width: 60,
+      field: 'rowNum', headerName: '#', width: 55,
       renderCell: (p) => (
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
           {p.row.hasError && <ErrorIcon sx={{ fontSize: 13, color: 'error.main' }} />}
           {p.row.hasWarning && !p.row.hasError && <WarningIcon sx={{ fontSize: 13, color: 'warning.dark' }} />}
           {!p.row.hasError && !p.row.hasWarning && <CheckIcon sx={{ fontSize: 13, color: 'success.main' }} />}
@@ -137,81 +273,77 @@ export default function UploadPreview() {
     },
     {
       field: 'date', headerName: 'Date', width: 110,
-      // DataGrid v7 valueFormatter signature: (value) => string
       valueFormatter: (value) => formatDate(value),
       renderCell: makeCellRenderer('date')
     },
     {
-      field: 'challanNo', headerName: 'Challan No.', width: 130,
+      field: 'challanNo', headerName: 'Challan No.', width: 120,
       renderCell: makeCellRenderer('Challan')
     },
     {
-      field: 'partyName', headerName: "Party's Name", width: 180,
+      field: 'partyName', headerName: "Party's Name", width: 170,
       renderCell: makeCellRenderer('Party')
     },
     {
-      field: 'destination', headerName: 'Destination', width: 150,
+      field: 'destination', headerName: 'Destination', width: 140,
       renderCell: makeCellRenderer('Destination')
     },
     {
-      field: 'truckNumber', headerName: 'Vehicle No.', width: 130,
+      field: 'truckNumber', headerName: 'Vehicle No.', width: 120,
       renderCell: makeCellRenderer('Truck')
     },
     {
-      field: 'qty', headerName: 'Qty', width: 90, type: 'number',
+      field: 'qty', headerName: 'Qty', width: 85, type: 'number',
       valueFormatter: (value) => numFmt(value),
       renderCell: makeCellRenderer('Qty')
     },
     {
-      field: 'rate', headerName: 'Rate', width: 100, type: 'number',
+      field: 'rate', headerName: 'Rate', width: 85, type: 'number',
       valueFormatter: (value) => numFmt(value),
       renderCell: makeCellRenderer('Rate')
     },
     {
-      field: 'gross', headerName: 'Gross', width: 110, type: 'number',
+      field: 'gross', headerName: 'Gross', width: 100, type: 'number',
       valueFormatter: (value) => numFmt(value),
       renderCell: makeCellRenderer('Gross')
     },
     {
-      field: 'comm', headerName: 'Comm', width: 100, type: 'number',
+      field: 'comm', headerName: 'Comm', width: 85, type: 'number',
       valueFormatter: (value) => numFmt(value),
       renderCell: makeCellRenderer('Comm')
     },
     {
-      field: 'amount', headerName: 'Amount', width: 120, type: 'number',
+      field: 'amount', headerName: 'Amount', width: 110, type: 'number',
       valueFormatter: (value) => numFmt(value),
       renderCell: makeCellRenderer('Amount')
     },
     {
-      field: '_status', headerName: 'Status', width: 110, sortable: false,
+      field: '_status', headerName: 'Status', width: 95, sortable: false,
       renderCell: (p) => {
         const s = getRowStatus(p.row);
-        if (s === 'error') return <Chip label="Error" color="error" size="small" />;
+        if (s === 'error')   return <Chip label="Error"   color="error"   size="small" />;
         if (s === 'warning') return <Chip label="Warning" color="warning" size="small" />;
         return <Chip label="Valid" color="success" size="small" />;
       }
+    },
+    {
+      field: '_actions', headerName: 'Actions', width: 90, sortable: false,
+      renderCell: (p) => (
+        <Box sx={{ display: 'flex', gap: 0.5 }}>
+          <Tooltip title="Edit row">
+            <IconButton size="small" onClick={() => openEdit(p.row)}>
+              <EditIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Remove row">
+            <IconButton size="small" color="error" onClick={() => setDeleteTarget(p.row)}>
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+        </Box>
+      )
     }
   ];
-
-  const handleSave = async () => {
-    setSaving(true);
-    setSaveError('');
-    try {
-      const res = await api.post('/upload/save', {
-        fileName: fileName || 'UploadedSheet.xlsx',
-        rows: parsedData
-      });
-      if (res.data.success) {
-        setSnack({ open: true, msg: 'Data saved successfully!', severity: 'success' });
-        setTimeout(() => navigate('/uploaded-data'), 1500);
-      }
-    } catch (err) {
-      setSaveError(err.response?.data?.message || 'Failed to save data.');
-    } finally {
-      setSaving(false);
-      setConfirmOpen(false);
-    }
-  };
 
   return (
     <Box>
@@ -223,11 +355,11 @@ export default function UploadPreview() {
               <BackIcon />
             </IconButton>
             <Typography variant="h5" sx={{ fontWeight: 700 }}>
-              Upload Preview
+              Payment Upload Preview
             </Typography>
           </Box>
           <Typography variant="body2" color="text.secondary" sx={{ ml: 5 }}>
-            {fileName} — {parsedData.length} rows parsed
+            {fileName} — {rows.length} rows loaded
           </Typography>
         </Box>
         <Box sx={{ display: 'flex', gap: 1 }}>
@@ -245,7 +377,7 @@ export default function UploadPreview() {
               color="success"
               startIcon={<SaveIcon />}
               onClick={() => setConfirmOpen(true)}
-              disabled={saving}
+              disabled={saving || rows.length === 0}
             >
               {saving ? 'Saving...' : 'Save to Database'}
             </Button>
@@ -257,7 +389,7 @@ export default function UploadPreview() {
       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 2 }}>
         <Chip
           icon={<CheckIcon />}
-          label={`Valid: ${report.validRows}`}
+          label={`Valid: ${validCount}`}
           color="success"
           variant={filterStatus === 'valid' ? 'filled' : 'outlined'}
           onClick={() => setFilterStatus(filterStatus === 'valid' ? 'all' : 'valid')}
@@ -265,7 +397,7 @@ export default function UploadPreview() {
         />
         <Chip
           icon={<WarningIcon />}
-          label={`Warnings: ${report.warningRows}`}
+          label={`Warnings: ${warningCount}`}
           color="warning"
           variant={filterStatus === 'warning' ? 'filled' : 'outlined'}
           onClick={() => setFilterStatus(filterStatus === 'warning' ? 'all' : 'warning')}
@@ -273,24 +405,62 @@ export default function UploadPreview() {
         />
         <Chip
           icon={<ErrorIcon />}
-          label={`Errors: ${report.errorRows || 0}`}
+          label={`Errors: ${errorCount}`}
           color="error"
           variant={filterStatus === 'error' ? 'filled' : 'outlined'}
           onClick={() => setFilterStatus(filterStatus === 'error' ? 'all' : 'error')}
           clickable
         />
         <Chip
-          label={`Total: ${report.totalRows}`}
+          label={`Total: ${rows.length}`}
           variant={filterStatus === 'all' ? 'filled' : 'outlined'}
           onClick={() => setFilterStatus('all')}
           clickable
         />
       </Box>
 
+      {/* Overall Totals Banner */}
+      <Paper sx={{ p: 2, mb: 3, bgcolor: '#f0fdf4', border: '1px solid #bbf7d0', borderRadius: 2 }}>
+        <Grid container spacing={2}>
+          <Grid item xs={12} sm={3}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Qty
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              {numFmt(rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0))}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Gross
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              ₹ {Math.round(rows.reduce((sum, r) => sum + (Number(r.gross) || 0), 0)).toLocaleString('en-IN')}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Comm
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              ₹ {Math.round(rows.reduce((sum, r) => sum + (Number(r.comm) || 0), 0)).toLocaleString('en-IN')}
+            </Typography>
+          </Grid>
+          <Grid item xs={12} sm={3}>
+            <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600, textTransform: 'uppercase' }}>
+              Overall Total Amount
+            </Typography>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: 'success.dark' }}>
+              ₹ {Math.round(rows.reduce((sum, r) => sum + (Number(r.amount) || 0), 0)).toLocaleString('en-IN')}
+            </Typography>
+          </Grid>
+        </Grid>
+      </Paper>
+
       {hasCriticalErrors && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          <strong>{report.errorRows} row(s)</strong> have critical errors (highlighted in red).
-          These must be fixed before saving. Hover over red cells to see details.
+          <strong>{errorCount} row(s)</strong> have critical errors (highlighted in red).
+          Click the <strong>Edit</strong> button on each row to fix, then save.
         </Alert>
       )}
 
@@ -318,7 +488,7 @@ export default function UploadPreview() {
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <FilterIcon fontSize="small" color="action" />
             <Typography variant="body2" color="text.secondary">
-              Showing {filteredRows.length} / {parsedData.length} rows
+              Showing {filteredRows.length} / {rows.length} rows
             </Typography>
           </Box>
         </Box>
@@ -339,18 +509,9 @@ export default function UploadPreview() {
           }}
           sx={{
             minHeight: 450,
-            '& .preview-row-error': {
-              bgcolor: '#fff5f5',
-              '&:hover': { bgcolor: '#ffebee' }
-            },
-            '& .preview-row-warning': {
-              bgcolor: '#fffde7',
-              '&:hover': { bgcolor: '#fff9c4' }
-            },
-            '& .MuiDataGrid-columnHeaders': {
-              bgcolor: 'background.default',
-              fontWeight: 700
-            },
+            '& .preview-row-error':   { bgcolor: '#fff5f5', '&:hover': { bgcolor: '#ffebee' } },
+            '& .preview-row-warning': { bgcolor: '#fffde7', '&:hover': { bgcolor: '#fff9c4' } },
+            '& .MuiDataGrid-columnHeaders': { bgcolor: 'background.default', fontWeight: 700 },
             '& .MuiDataGrid-cell': { fontSize: '0.82rem' }
           }}
         />
@@ -371,14 +532,80 @@ export default function UploadPreview() {
         </Typography>
       </Box>
 
-      {/* Confirm save dialog */}
-      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
-        <DialogTitle>Confirm Save</DialogTitle>
+      {/* ── Edit Dialog ─────────────────────────────────────────────────────────── */}
+      <Dialog open={Boolean(editRow)} onClose={() => setEditRow(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            Edit Payment Row
+            <IconButton onClick={() => setEditRow(null)} size="small"><CloseIcon /></IconButton>
+          </Box>
+        </DialogTitle>
+        <DialogContent dividers>
+          {editErrors.length > 0 && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              {editErrors.map((e, i) => <div key={i}>• {e}</div>)}
+            </Alert>
+          )}
+          {editWarnings.length > 0 && (
+            <Alert severity="warning" sx={{ mb: 2 }}>
+              {editWarnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+            </Alert>
+          )}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2 }}>
+            {FIELD_DEFS.map(({ key, label, type }) => (
+              <Box key={key} sx={{ flex: '1 1 180px', minWidth: 160 }}>
+                <TextField
+                  size="small"
+                  fullWidth
+                  label={label}
+                  type={type || 'text'}
+                  slotProps={type === 'date' ? { inputLabel: { shrink: true } } : {}}
+                  value={editForm[key] ?? ''}
+                  onChange={(e) => handleEditFieldChange(key, e.target.value)}
+                />
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setEditRow(null)}>Cancel</Button>
+          <Button
+            variant="contained"
+            onClick={handleSaveEdit}
+            disabled={editErrors.length > 0}
+          >
+            Apply Changes
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ── Delete Confirm Dialog ────────────────────────────────────────────────── */}
+      <Dialog open={Boolean(deleteTarget)} onClose={() => setDeleteTarget(null)}>
+        <DialogTitle>Remove Row</DialogTitle>
         <DialogContent>
           <Typography>
-            You are about to save <strong>{parsedData.length} rows</strong> to the database.
-            {report.warningRows > 0 && (
-              <> Rows with warnings (<strong>{report.warningRows}</strong>) will also be saved.</>
+            Remove row {deleteTarget?.rowNum} (Challan: <strong>{deleteTarget?.challanNo || '—'}</strong>, Vehicle: <strong>{deleteTarget?.truckNumber || '—'}</strong>) from this preview?
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            This only removes it from the current preview. It will not be saved to the database.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDeleteTarget(null)}>Cancel</Button>
+          <Button variant="contained" color="error" onClick={handleDelete}>
+            Remove
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Confirm save dialog */}
+      <Dialog open={confirmOpen} onClose={() => setConfirmOpen(false)}>
+        <DialogTitle>Confirm Save to Database</DialogTitle>
+        <DialogContent>
+          <Typography>
+            You are about to save <strong>{rows.length} payment rows</strong> to the database.
+            {warningCount > 0 && (
+              <> Rows with warnings (<strong>{warningCount}</strong>) will also be saved.</>
             )}
           </Typography>
         </DialogContent>
