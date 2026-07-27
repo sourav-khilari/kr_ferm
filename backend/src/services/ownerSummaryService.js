@@ -52,14 +52,14 @@ class OwnerSummaryService {
 
         // Calculate Gross Pay (Sum of Amount from Payment rows)
         const pRows = paymentMap.get(cleanNo) || [];
-        const grossPay = pRows.reduce((sum, r) => sum + (r.amount || 0), 0);
+        const grossPay = pRows.reduce((sum, r) => sum + (Math.round(r.amount) || 0), 0);
 
         // Calculate Diesel Amount (Sum of Amount from Diesel rows)
         const dRows = dieselMap.get(cleanNo) || [];
-        const dieselAmt = dRows.reduce((sum, r) => sum + (r.amount || 0), 0);
+        const dieselAmt = dRows.reduce((sum, r) => sum + (Math.round(r.amount) || 0), 0);
 
         // Calculate Shortage (Sum of shortage column from Payment rows)
-        const shortageAmt = pRows.reduce((sum, r) => sum + (r.shortage || 0), 0);
+        const shortageAmt = pRows.reduce((sum, r) => sum + (Math.round(r.shortage) || 0), 0);
 
         ownerTotalGross += grossPay;
         ownerTotalDiesel += dieselAmt;
@@ -83,7 +83,7 @@ class OwnerSummaryService {
         ? owner.tdsPercentage / 100 
         : 0.01; // default 1%
 
-      const tdsValue = ownerTotalGross * tdsRate;
+      const tdsValue = Math.round(ownerTotalGross * tdsRate);
 
       let calculation = {};
 

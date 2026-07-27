@@ -192,8 +192,8 @@ class JointReportService {
           row.getCell(1).value  = serial++;
           row.getCell(2).value  = owner.ownerName;
           row.getCell(5).value  = Math.round(owner.totals.taxableValue);   // Taxable Value
-          row.getCell(6).value  = Math.round(owner.totals.cgst);           // CGST
-          row.getCell(7).value  = Math.round(owner.totals.sgst);           // SGST
+          row.getCell(6).value  = (owner.totals.cgst);           // CGST
+          row.getCell(7).value  = (owner.totals.sgst);           // SGST
           row.getCell(8).value  = owner.totals.roundOff;                   // Round off (keep decimal)
           row.getCell(9).value  = Math.round(owner.totals.invoiceValue);   // Invoice Value
           row.getCell(11).value = Math.round(owner.totals.totalDiesel);    // Total Diesel

@@ -13,7 +13,8 @@ function numFmt(val) {
 }
 function intFmt(val) {
   if (val === null || val === undefined) return '—';
-  return Math.round(Number(val)).toLocaleString('en-IN');
+  //return Math.round(Number(val)).toLocaleString('en-IN');
+  return ((val)).toLocaleString('en-IN');
 }
 function signFmt(val) {
   if (val === null || val === undefined) return '—';
