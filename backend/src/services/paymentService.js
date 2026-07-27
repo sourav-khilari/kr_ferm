@@ -126,6 +126,24 @@ class PaymentService {
     return `${day}.${month}.${year}`;
   }
 
+  applyTotalsStyle(row, colCount) {
+    for (let c = 1; c <= colCount; c++) {
+      const cell = row.getCell(c);
+      cell.font = { ...cell.font, bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFF00' }
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────
   // Excel generation
   // ─────────────────────────────────────────────────────────────
@@ -250,6 +268,7 @@ class PaymentService {
         { col: 6, value: group.totalQty,   style: totalStyles[5], numFormat: '#,##0.00' },
         { col: 7, value: Math.round(group.totalAmount), style: totalStyles[6], numFormat: '#,##0' }
       ], totalRowTemp);
+      this.applyTotalsStyle(srcSheet.getRow(currentExcelRow - 1), 7);
 
       // Apply spacing
       if (group.ownerChangeAfter) {

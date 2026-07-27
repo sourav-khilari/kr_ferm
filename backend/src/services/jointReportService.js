@@ -238,7 +238,26 @@ class JointReportService {
       grandTotalRow.getCell(13).value = { formula: `=SUM(M4:M${endData})` };
       grandTotalRow.getCell(14).value = { formula: `=SUM(N4:N${endData})` };
     }
+    this.applyTotalsStyle(grandTotalRow, COL_COUNT);
     grandTotalRow.commit();
+  }
+
+  applyTotalsStyle(row, colCount) {
+    for (let c = 1; c <= colCount; c++) {
+      const cell = row.getCell(c);
+      cell.font = { ...cell.font, bold: true };
+      cell.fill = {
+        type: 'pattern',
+        pattern: 'solid',
+        fgColor: { argb: 'FFFF00' }
+      };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FF000000' } },
+        bottom: { style: 'thin', color: { argb: 'FF000000' } },
+        left: { style: 'thin', color: { argb: 'FF000000' } },
+        right: { style: 'thin', color: { argb: 'FF000000' } }
+      };
+    }
   }
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -347,6 +366,7 @@ class JointReportService {
       grandTotalRow.getCell(10).value = { formula: `=SUM(J4:J${endData})` };
       grandTotalRow.getCell(11).value = { formula: `=SUM(K4:K${endData})` };
     }
+    this.applyTotalsStyle(grandTotalRow, COL_COUNT);
     grandTotalRow.commit();
   }
 
@@ -425,6 +445,7 @@ class JointReportService {
     if (currRow > 4) {
       grandTotalRow.getCell(3).value = { formula: `=SUM(C4:C${currRow - 1})` };
     }
+    this.applyTotalsStyle(grandTotalRow, COL_COUNT);
     grandTotalRow.commit();
   }
 }
