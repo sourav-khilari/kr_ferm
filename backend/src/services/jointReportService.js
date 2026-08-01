@@ -22,6 +22,7 @@ class JointReportService {
    */
   copyRow(srcRow, destRow, colCount) {
     destRow.height = srcRow.height;
+    if (srcRow.height) destRow.customHeight = true;
     for (let c = 1; c <= colCount; c++) {
       const srcCell  = srcRow.getCell(c);
       const destCell = destRow.getCell(c);
@@ -95,6 +96,15 @@ class JointReportService {
     const gstOut    = outWb.addWorksheet('GST Payment');
     const rcmOut    = outWb.addWorksheet('RCM Payment');
     const chequeOut = outWb.addWorksheet('Cheque Details');
+
+    Object.assign(gstOut.properties, gstSrc.properties);
+    if (gstSrc.pageSetup) gstOut.pageSetup = JSON.parse(JSON.stringify(gstSrc.pageSetup));
+
+    Object.assign(rcmOut.properties, rcmSrc.properties);
+    if (rcmSrc.pageSetup) rcmOut.pageSetup = JSON.parse(JSON.stringify(rcmSrc.pageSetup));
+
+    Object.assign(chequeOut.properties, chequeSrc.properties);
+    if (chequeSrc.pageSetup) chequeOut.pageSetup = JSON.parse(JSON.stringify(chequeSrc.pageSetup));
 
     // Fetch owner summary data
     const allSummaries = await ownerSummaryService.getOwnerSummary({ fromDate, toDate });
@@ -299,8 +309,8 @@ class JointReportService {
     }
 
     const tDataRow   = srcSheet.getRow(4);
-    const dataHeight = tDataRow.height || 22;
-
+    const dataHeight = tDataRow.height && tDataRow.height > 0 ? tDataRow.height : 15.67;  
+  //console.log('Data row height:', dataHeight);
     let currRow = 4;
     let serial  = 1;
 
@@ -311,6 +321,11 @@ class JointReportService {
       owner.trucks.forEach((truck, tIdx) => {
         const row = outSheet.getRow(currRow);
         row.height = dataHeight;
+
+        // This tells Excel to keep the height locked and NOT auto-fit/shrink it based on text size
+        row.customHeight = true;
+
+
 
         for (let c = 1; c <= COL_COUNT; c++) {
           this.copyCellStyles(tDataRow.getCell(c), row.getCell(c));
@@ -333,7 +348,6 @@ class JointReportService {
           row.getCell(11).value = Math.round(owner.totals.netPayment);        // Total Payt (net)
         }
 
-        row.commit();
         currRow++;
       });
 
@@ -346,6 +360,19 @@ class JointReportService {
         });
       }
     });
+
+    // Post-merge height-lock loop.
+    // We must touch the row (e.g. read a cell) so ExcelJS marks it dirty
+    // and serializes height + customHeight="1" into the output XML.
+    // Without this, Excel ignores the height and auto-fits to font size (12.5pt).
+    for (let r = 4; r < currRow; r++) {
+      const finalRow = outSheet.getRow(r);
+      finalRow.height = 15.67;
+      finalRow.customHeight = true;
+      // Touch the row to force ExcelJS to include it in the serialized XML
+      finalRow.getCell(1);
+      finalRow.commit();
+    }
 
     // Grand total row
     const grandTotalRow = outSheet.getRow(currRow);
